@@ -1,99 +1,72 @@
-import { Product, Assignment, ScrappedItem, Employee, DEFAULT_CATEGORIES } from '../types';
+import { supabase } from './supabaseClient';
+import { Product, Assignment, ScrappedItem, Employee } from '../types';
 
-const STORAGE_KEY = 'stockmind_inventory_v1';
-const ASSIGNMENTS_KEY = 'stockmind_assignments_v1';
-const SCRAPPED_KEY = 'stockmind_scrapped_v1';
-const EMPLOYEES_KEY = 'stockmind_employees_v1';
-const CATEGORIES_KEY = 'stockmind_categories_v1';
-
-const INITIAL_DATA: Product[] = [
-  {
-    id: '1',
-    name: 'Wireless Noise-Canceling Headphones',
-    nameZh: '无线降噪耳机',
-    sku: 'AUDIO-001',
-    category: 'Electronics',
-    quantity: 12,
-    price: 299.99,
-    minStock: 15,
-    description: 'Premium over-ear headphones with active noise cancellation and 30-hour battery life.',
-    lastUpdated: new Date().toISOString()
-  },
-  {
-    id: '2',
-    name: 'Ergonomic Mesh Office Chair',
-    nameZh: '人体工学网眼办公椅',
-    sku: 'FUR-002',
-    category: 'Office Supplies',
-    quantity: 45,
-    price: 199.50,
-    minStock: 10,
-    description: 'Breathable mesh back support with adjustable lumbar and armrests.',
-    lastUpdated: new Date().toISOString()
-  },
-  {
-    id: '3',
-    name: 'Organic Green Tea (Pack of 50)',
-    nameZh: '有机绿茶 (50包入)',
-    sku: 'BEV-003',
-    category: 'Food & Beverage',
-    quantity: 120,
-    price: 15.99,
-    minStock: 50,
-    description: 'Sustainably sourced organic green tea leaves.',
-    lastUpdated: new Date().toISOString()
-  },
-];
-
-export const getInventory = (): Product[] => {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (!stored) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_DATA));
-    return INITIAL_DATA;
-  }
-  return JSON.parse(stored);
+// Products
+export const fetchProducts = async (): Promise<Product[]> => {
+  const { data, error } = await supabase.from('products').select('*');
+  if (error) throw error;
+  return data || [];
 };
 
-export const saveInventory = (products: Product[]): void => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(products));
+export const upsertProduct = async (product: Product): Promise<void> => {
+  const { error } = await supabase.from('products').upsert(product);
+  if (error) throw error;
 };
 
-export const getAssignments = (): Assignment[] => {
-  const stored = localStorage.getItem(ASSIGNMENTS_KEY);
-  return stored ? JSON.parse(stored) : [];
+export const deleteProductApi = async (id: string): Promise<void> => {
+  const { error } = await supabase.from('products').delete().eq('id', id);
+  if (error) throw error;
 };
 
-export const saveAssignments = (assignments: Assignment[]): void => {
-  localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(assignments));
+// Employees
+export const fetchEmployees = async (): Promise<Employee[]> => {
+  const { data, error } = await supabase.from('employees').select('*');
+  if (error) throw error;
+  return data || [];
 };
 
-export const getScrappedItems = (): ScrappedItem[] => {
-  const stored = localStorage.getItem(SCRAPPED_KEY);
-  return stored ? JSON.parse(stored) : [];
+export const addEmployeeApi = async (employee: Employee): Promise<void> => {
+  const { error } = await supabase.from('employees').insert(employee);
+  if (error) throw error;
 };
 
-export const saveScrappedItems = (items: ScrappedItem[]): void => {
-  localStorage.setItem(SCRAPPED_KEY, JSON.stringify(items));
+// Assignments
+export const fetchAssignments = async (): Promise<Assignment[]> => {
+  const { data, error } = await supabase.from('assignments').select('*');
+  if (error) throw error;
+  return data || [];
 };
 
-export const getEmployees = (): Employee[] => {
-  const stored = localStorage.getItem(EMPLOYEES_KEY);
-  return stored ? JSON.parse(stored) : [];
+export const addAssignmentApi = async (assignment: Assignment): Promise<void> => {
+  const { error } = await supabase.from('assignments').insert(assignment);
+  if (error) throw error;
 };
 
-export const saveEmployees = (employees: Employee[]): void => {
-  localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(employees));
+// Scrapped Items
+export const fetchScrappedItems = async (): Promise<ScrappedItem[]> => {
+  const { data, error } = await supabase.from('scrapped_items').select('*').order('scrappedDate', { ascending: false });
+  if (error) throw error;
+  return data || [];
 };
 
-export const getCategories = (): string[] => {
-  const stored = localStorage.getItem(CATEGORIES_KEY);
-  if (!stored) {
-    localStorage.setItem(CATEGORIES_KEY, JSON.stringify(DEFAULT_CATEGORIES));
-    return DEFAULT_CATEGORIES;
-  }
-  return JSON.parse(stored);
+export const addScrappedItemApi = async (item: ScrappedItem): Promise<void> => {
+  const { error } = await supabase.from('scrapped_items').insert(item);
+  if (error) throw error;
 };
 
-export const saveCategories = (categories: string[]): void => {
-  localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
+// Categories
+export const fetchCategories = async (): Promise<string[]> => {
+  const { data, error } = await supabase.from('categories').select('name');
+  if (error) throw error;
+  return data ? data.map((c: any) => c.name) : [];
+};
+
+export const addCategoryApi = async (name: string): Promise<void> => {
+  const { error } = await supabase.from('categories').insert({ name });
+  if (error) throw error;
+};
+
+export const deleteCategoryApi = async (name: string): Promise<void> => {
+  const { error } = await supabase.from('categories').delete().eq('name', name);
+  if (error) throw error;
 };

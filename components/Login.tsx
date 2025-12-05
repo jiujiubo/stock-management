@@ -1,22 +1,31 @@
 import React, { useState } from 'react';
-import { ArrowRight, Lock } from 'lucide-react';
+import { ArrowRight, Lock, Loader2 } from 'lucide-react';
+import { supabase } from '../services/supabaseClient';
 
-interface LoginProps {
-  onLogin: () => void;
-}
+interface LoginProps {}
 
-const Login: React.FC<LoginProps> = ({ onLogin }) => {
+const Login: React.FC<LoginProps> = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email && password) {
-       // Simple mock authentication
-       onLogin();
-    } else {
-        setError('Please enter valid credentials');
+    setLoading(true);
+    setError('');
+    
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -57,14 +66,15 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               </div>
             </div>
 
-            {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+            {error && <p className="text-red-500 text-sm text-center bg-red-50 p-2 rounded">{error}</p>}
 
             <button
               type="submit"
-              className="w-full bg-slate-900 text-white font-bold py-3 rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 group"
+              disabled={loading}
+              className="w-full bg-slate-900 text-white font-bold py-3 rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 group disabled:opacity-70"
             >
-              Sign In
-              <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+              {loading ? <Loader2 className="animate-spin" size={20} /> : 'Sign In'}
+              {!loading && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
             </button>
           </form>
 

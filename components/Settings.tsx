@@ -1,18 +1,26 @@
-import React, { useState } from 'react';
-import { Plus, Trash2, Tag, AlertTriangle, BrainCircuit } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Plus, Trash2, Tag, AlertTriangle, BrainCircuit, Download, Upload } from 'lucide-react';
 import AIAdvisor from './AIAdvisor';
-import { Product } from '../types';
+import { Product, Assignment, ScrappedItem, Employee } from '../types';
 
 interface SettingsProps {
   categories: string[];
   products: Product[];
+  assignments: Assignment[];
+  scrappedItems: ScrappedItem[];
+  employees: Employee[];
   onAddCategory: (category: string) => void;
   onDeleteCategory: (category: string) => void;
+  onImportData: (data: any) => void;
 }
 
-const Settings: React.FC<SettingsProps> = ({ categories, products, onAddCategory, onDeleteCategory }) => {
+const Settings: React.FC<SettingsProps> = ({ 
+  categories, products, assignments, scrappedItems, employees,
+  onAddCategory, onDeleteCategory, onImportData 
+}) => {
   const [activeTab, setActiveTab] = useState<'general' | 'advisor'>('general');
   const [newCategory, setNewCategory] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Modal state
   const [deleteModal, setDeleteModal] = useState<{
@@ -57,6 +65,60 @@ const Settings: React.FC<SettingsProps> = ({ categories, products, onAddCategory
   const confirmDelete = () => {
     onDeleteCategory(deleteModal.category);
     setDeleteModal(prev => ({ ...prev, isOpen: false }));
+  };
+
+  const handleExport = () => {
+    const data = {
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      products,
+      categories,
+      assignments,
+      scrappedItems,
+      employees
+    };
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `great-river-backup-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const result = event.target?.result;
+        if (typeof result === 'string') {
+          const data = JSON.parse(result);
+          // Basic validation checking for 'products' array
+          if (Array.isArray(data.products)) {
+             if (window.confirm('This will overwrite your current data with the backup. Are you sure?')) {
+                 onImportData(data);
+             }
+          } else {
+             alert('Invalid backup file format.');
+          }
+        }
+      } catch (error) {
+        alert('Failed to parse backup file.');
+      }
+    };
+    reader.readAsText(file);
+    // Reset value to allow same file selection again
+    e.target.value = '';
   };
 
   return (
@@ -133,15 +195,30 @@ const Settings: React.FC<SettingsProps> = ({ categories, products, onAddCategory
                 <AlertTriangle className="text-amber-500" size={20} />
                 System Actions
                 </h3>
-                <p className="text-slate-500 mb-6">Major actions for system maintenance.</p>
+                <p className="text-slate-500 mb-6">Backup your data to a secure file or restore from a previous backup.</p>
                 
                 <div className="flex gap-4">
-                    <button className="px-4 py-2 bg-slate-100 text-slate-600 font-medium rounded-lg hover:bg-slate-200 transition-colors">
+                    <button 
+                      onClick={handleExport}
+                      className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 font-medium rounded-lg hover:bg-slate-200 transition-colors border border-slate-200"
+                    >
+                        <Download size={18} />
                         Export Data
                     </button>
-                    <button className="px-4 py-2 bg-slate-100 text-slate-600 font-medium rounded-lg hover:bg-slate-200 transition-colors">
-                        Clear Cache
+                    <button 
+                      onClick={handleImportClick}
+                      className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 font-medium rounded-lg hover:bg-slate-200 transition-colors border border-slate-200"
+                    >
+                        <Upload size={18} />
+                        Import Data
                     </button>
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      onChange={handleFileChange} 
+                      accept=".json" 
+                      className="hidden" 
+                    />
                 </div>
             </div>
         </div>

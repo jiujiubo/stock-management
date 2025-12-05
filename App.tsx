@@ -7,16 +7,23 @@ import StockOperationModal from './components/StockOperationModal';
 import Scrapped from './components/Scrapped';
 import Employees from './components/Employees';
 import Settings from './components/Settings';
+import Login from './components/Login';
 import { 
-  getInventory, saveInventory, 
-  getAssignments, saveAssignments,
-  getScrappedItems, saveScrappedItems,
-  getEmployees, saveEmployees,
-  getCategories, saveCategories
+  fetchProducts, upsertProduct, deleteProductApi,
+  fetchAssignments, addAssignmentApi,
+  fetchScrappedItems, addScrappedItemApi,
+  fetchEmployees, addEmployeeApi,
+  fetchCategories, addCategoryApi, deleteCategoryApi
 } from './services/storageService';
+import { supabase, isConfigured } from './services/supabaseClient';
 import { Product, Assignment, ScrappedItem, OperationType, Employee } from './types';
+import { Loader2, Database, AlertTriangle } from 'lucide-react';
 
 const App: React.FC = () => {
+  const [session, setSession] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Data State
   const [currentView, setCurrentView] = useState('dashboard');
   const [products, setProducts] = useState<Product[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -32,101 +39,182 @@ const App: React.FC = () => {
   const [stockOpType, setStockOpType] = useState<OperationType>('INBOUND');
   const [selectedStockProduct, setSelectedStockProduct] = useState<Product | undefined>(undefined);
 
+  // Auth Check
   useEffect(() => {
-    // Load initial data
-    setProducts(getInventory());
-    setAssignments(getAssignments());
-    setScrappedItems(getScrappedItems());
-    setEmployees(getEmployees());
-    setCategories(getCategories());
+    if (!isConfigured) {
+      setIsLoading(false);
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const handleSaveProduct = (product: Product) => {
-    let updatedProducts;
-    if (editingProduct) {
-      updatedProducts = products.map(p => p.id === product.id ? product : p);
+  // Data Loading
+  useEffect(() => {
+    if (session && isConfigured) {
+      loadData();
     } else {
-      updatedProducts = [...products, product];
+      setIsLoading(false);
     }
-    setProducts(updatedProducts);
-    saveInventory(updatedProducts);
+  }, [session]);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const [prod, assign, scrap, emp, cats] = await Promise.all([
+        fetchProducts(),
+        fetchAssignments(),
+        fetchScrappedItems(),
+        fetchEmployees(),
+        fetchCategories()
+      ]);
+      setProducts(prod);
+      setAssignments(assign);
+      setScrappedItems(scrap);
+      setEmployees(emp);
+      setCategories(cats);
+    } catch (error) {
+      console.error("Failed to load data", error);
+      alert("Error loading data from server.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleDeleteProduct = (id: string) => {
-    if (confirm('Are you sure you want to delete this product?')) {
-      const updatedProducts = products.filter(p => p.id !== id);
+  const handleSaveProduct = async (product: Product) => {
+    try {
+      // Optimistic update
+      let updatedProducts;
+      if (editingProduct) {
+        updatedProducts = products.map(p => p.id === product.id ? product : p);
+      } else {
+        updatedProducts = [...products, product];
+      }
       setProducts(updatedProducts);
-      saveInventory(updatedProducts);
+      
+      // DB Update
+      await upsertProduct(product);
+      // Reload to ensure sync
+      const refreshed = await fetchProducts();
+      setProducts(refreshed);
+    } catch (error) {
+      alert("Failed to save product.");
+      loadData(); // Revert on error
     }
   };
 
-  const handleStockOperation = (data: any) => {
+  const handleDeleteProduct = async (id: string) => {
+    if (confirm('Are you sure you want to delete this product?')) {
+      try {
+        const updatedProducts = products.filter(p => p.id !== id);
+        setProducts(updatedProducts);
+        await deleteProductApi(id);
+      } catch (error) {
+        alert("Failed to delete product");
+        loadData();
+      }
+    }
+  };
+
+  const handleStockOperation = async (data: any) => {
     const { productId, quantity, type, employeeId, employeeName, reason, productName, productNameZh } = data;
     
-    // Update Product Stock
-    const updatedProducts = products.map(p => {
-      if (p.id === productId) {
-        return {
-          ...p,
-          quantity: type === 'INBOUND' ? p.quantity + quantity : Math.max(0, p.quantity - quantity),
-          lastUpdated: new Date().toISOString()
-        };
-      }
-      return p;
-    });
-    setProducts(updatedProducts);
-    saveInventory(updatedProducts);
+    try {
+      // 1. Update Product Stock
+      const product = products.find(p => p.id === productId);
+      if (!product) return;
 
-    // Handle Specific Records
-    if (type === 'ASSIGN') {
-      const newAssignment: Assignment = {
-        id: Date.now().toString(),
-        productId,
-        productName,
-        productNameZh: productNameZh || '',
-        employeeId,
-        employeeName,
-        quantity,
-        assignedDate: new Date().toISOString(),
-        status: 'Active'
-      };
-      const updatedAssignments = [...assignments, newAssignment];
-      setAssignments(updatedAssignments);
-      saveAssignments(updatedAssignments);
-    } else if (type === 'SCRAP') {
-      const newScrap: ScrappedItem = {
-        id: Date.now().toString(),
-        productId,
-        productName,
-        productNameZh: productNameZh || '',
-        quantity,
-        reason,
-        scrappedDate: new Date().toISOString()
-      };
-      const updatedScrapped = [newScrap, ...scrappedItems];
-      setScrappedItems(updatedScrapped);
-      saveScrappedItems(updatedScrapped);
+      const newQuantity = type === 'INBOUND' ? product.quantity + quantity : Math.max(0, product.quantity - quantity);
+      const updatedProduct = { ...product, quantity: newQuantity, lastUpdated: new Date().toISOString() };
+      
+      // Optimistic Update
+      setProducts(products.map(p => p.id === productId ? updatedProduct : p));
+      await upsertProduct(updatedProduct);
+
+      // 2. Create Transaction Record
+      if (type === 'ASSIGN') {
+        const newAssignment: Assignment = {
+          id: crypto.randomUUID(),
+          productId,
+          productName,
+          productNameZh: productNameZh || '',
+          employeeId,
+          employeeName,
+          quantity,
+          assignedDate: new Date().toISOString(),
+          status: 'Active'
+        };
+        setAssignments([...assignments, newAssignment]);
+        await addAssignmentApi(newAssignment);
+      } else if (type === 'SCRAP') {
+        const newScrap: ScrappedItem = {
+          id: crypto.randomUUID(),
+          productId,
+          productName,
+          productNameZh: productNameZh || '',
+          quantity,
+          reason,
+          scrappedDate: new Date().toISOString()
+        };
+        setScrappedItems([newScrap, ...scrappedItems]);
+        await addScrappedItemApi(newScrap);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Operation failed. Syncing data...");
+      loadData();
     }
   };
 
-  const handleAddEmployee = (newEmployee: Employee) => {
-      const updatedEmployees = [...employees, newEmployee];
-      setEmployees(updatedEmployees);
-      saveEmployees(updatedEmployees);
+  const handleAddEmployee = async (newEmployee: Employee) => {
+    try {
+      setEmployees([...employees, newEmployee]);
+      await addEmployeeApi(newEmployee);
+    } catch (error) {
+      alert("Failed to add employee");
+      loadData();
+    }
   };
 
-  const handleAddCategory = (cat: string) => {
+  const handleAddCategory = async (cat: string) => {
       if (!categories.includes(cat)) {
-          const updatedCategories = [...categories, cat];
-          setCategories(updatedCategories);
-          saveCategories(updatedCategories);
+          try {
+            setCategories([...categories, cat]);
+            await addCategoryApi(cat);
+          } catch (e) {
+            alert("Failed to add category");
+            loadData();
+          }
       }
   };
 
-  const handleDeleteCategory = (cat: string) => {
-      const updatedCategories = categories.filter(c => c !== cat);
-      setCategories(updatedCategories);
-      saveCategories(updatedCategories);
+  const handleDeleteCategory = async (cat: string) => {
+      try {
+        const updatedCategories = categories.filter(c => c !== cat);
+        setCategories(updatedCategories);
+        await deleteCategoryApi(cat);
+      } catch (e) {
+        alert("Failed to delete category");
+        loadData();
+      }
+  };
+
+  const handleImportData = async (data: any) => {
+    alert("Bulk import is not fully supported in Cloud Mode yet to prevent data conflicts. Please add items manually.");
+  };
+  
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
   };
 
   // Modal Triggers
@@ -168,12 +256,81 @@ const App: React.FC = () => {
       case 'scrapped':
         return <Scrapped scrappedItems={scrappedItems} />;
       case 'settings':
-        return <Settings categories={categories} products={products} onAddCategory={handleAddCategory} onDeleteCategory={handleDeleteCategory} />;
+        return (
+          <Settings 
+            categories={categories} 
+            products={products} 
+            assignments={assignments}
+            employees={employees}
+            scrappedItems={scrappedItems}
+            onAddCategory={handleAddCategory} 
+            onDeleteCategory={handleDeleteCategory} 
+            onImportData={handleImportData}
+          />
+        );
       default:
         return <Dashboard products={products} />;
     }
   };
 
+  // 1. Missing Configuration State
+  if (!isConfigured) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white max-w-lg w-full rounded-2xl shadow-xl p-8 text-center space-y-6 animate-fade-in">
+          <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto">
+            <Database size={32} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Connect to Database</h1>
+            <p className="text-slate-500">
+              To use the cloud storage features, you must connect your Supabase database.
+            </p>
+          </div>
+          
+          <div className="bg-slate-100 p-4 rounded-lg text-left text-sm space-y-3 font-mono text-slate-700">
+            <div className="flex items-center gap-2 text-amber-600 font-sans font-bold text-xs uppercase tracking-wider mb-1">
+              <AlertTriangle size={12} />
+              Missing Environment Variables
+            </div>
+            <div>
+              <p className="text-slate-400 text-xs mb-1">Project URL</p>
+              <div className="bg-white p-2 rounded border border-slate-200 break-all">
+                SUPABASE_URL
+              </div>
+            </div>
+            <div>
+              <p className="text-slate-400 text-xs mb-1">Public Anon Key</p>
+              <div className="bg-white p-2 rounded border border-slate-200 break-all">
+                SUPABASE_ANON_KEY
+              </div>
+            </div>
+          </div>
+          
+          <div className="text-xs text-slate-400">
+             Please add these keys to your environment configuration to proceed.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Auth State
+  if (!session) {
+    return <Login />;
+  }
+
+  // 3. Loading State
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-500 gap-4">
+        <Loader2 className="animate-spin text-blue-600" size={48} />
+        <p className="font-medium animate-pulse">Syncing with Great River Database...</p>
+      </div>
+    );
+  }
+
+  // 4. Main App State
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900">
       <Sidebar currentView={currentView} onViewChange={setCurrentView} />
@@ -199,11 +356,11 @@ const App: React.FC = () => {
             
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
-                <p className="text-sm font-medium text-slate-900">Admin User</p>
-                <p className="text-xs text-slate-500">admin@greatriver.com</p>
+                <p className="text-sm font-medium text-slate-900">{session.user.email}</p>
+                <button onClick={handleLogout} className="text-xs text-red-500 hover:text-red-700 font-medium">Sign Out</button>
               </div>
               <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold border-2 border-white shadow-sm">
-                AU
+                {session.user.email?.substring(0,2).toUpperCase()}
               </div>
             </div>
           </header>
