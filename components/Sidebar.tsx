@@ -1,8 +1,6 @@
 
 import React from 'react';
 import { LayoutDashboard, Package, Users, Trash2, Settings as SettingsIcon, ClipboardList } from 'lucide-react';
-// Import the logo relative to this file (components folder -> up one level -> logo.png)
-import logo from '../logo.png';
 
 interface SidebarProps {
   currentView: string;
@@ -22,9 +20,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
   return (
     <div className="w-64 bg-slate-900 text-white h-screen flex flex-col fixed left-0 top-0 shadow-xl z-20">
       <div className="p-6 flex items-center space-x-3 border-b border-slate-700">
-        <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center overflow-hidden shrink-0 p-1">
-           {/* Use the imported logo variable here */}
-           <img src={logo} alt="GR Logo" className="w-full h-full object-contain" />
+        <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center overflow-hidden shrink-0">
+           <Package className="text-slate-900" size={24} />
         </div>
         <div>
             <h1 className="text-lg font-bold tracking-wide leading-none">Great River</h1>
