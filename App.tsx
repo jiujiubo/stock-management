@@ -79,6 +79,22 @@ const App: React.FC = () => {
         try {
           // 1. Check Super Admin hardcode
           if (email === SUPER_ADMIN_EMAIL) {
+            // Ensure Super Admin exists in DB (so they appear in User Management lists)
+            // Wrap in try/catch so we don't block login if tables are missing
+            try {
+                const existingAdmin = await fetchAppUser(email);
+                if (!existingAdmin) {
+                    await createAppUser({
+                        id: session.user.id,
+                        email,
+                        role: 'super_admin',
+                        is_approved: true
+                    });
+                }
+            } catch (e) {
+                console.warn("Could not sync admin to DB (tables might be missing)", e);
+            }
+
             setIsApproved(true);
             setCurrentUser({ id: session.user.id, email, role: 'super_admin', is_approved: true });
             await loadData();
