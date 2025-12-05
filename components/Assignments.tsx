@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
 import { Assignment } from '../types';
-import { User, Calendar, Tag, Search, Box } from 'lucide-react';
+import { User, Calendar, Tag, Search, Box, UserCheck } from 'lucide-react';
 
 interface AssignmentsProps {
   assignments: Assignment[];
@@ -64,6 +65,11 @@ const Assignments: React.FC<AssignmentsProps> = ({ assignments }) => {
                     <Calendar size={16} />
                     <span>{new Date(assignment.assignedDate).toLocaleDateString()}</span>
                   </div>
+                </div>
+                {/* Audit Trail */}
+                <div className="pt-3 border-t border-slate-50 flex items-center gap-2 text-xs text-slate-400">
+                   <UserCheck size={12} />
+                   <span>Assigned by: {assignment.performedBy || 'System'}</span>
                 </div>
               </div>
             </div>

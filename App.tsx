@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -8,20 +9,26 @@ import Scrapped from './components/Scrapped';
 import Employees from './components/Employees';
 import Settings from './components/Settings';
 import Login from './components/Login';
+import Logs from './components/Logs'; // New Component
 import { 
   fetchProducts, upsertProduct, deleteProductApi,
   fetchAssignments, addAssignmentApi,
   fetchScrappedItems, addScrappedItemApi,
   fetchEmployees, addEmployeeApi,
-  fetchCategories, addCategoryApi, deleteCategoryApi
+  fetchCategories, addCategoryApi, deleteCategoryApi,
+  fetchAppUser, createAppUser, addStockLogApi, fetchStockLogs
 } from './services/storageService';
 import { supabase, isConfigured } from './services/supabaseClient';
-import { Product, Assignment, ScrappedItem, OperationType, Employee } from './types';
-import { Loader2, Database, AlertTriangle } from 'lucide-react';
+import { Product, Assignment, ScrappedItem, OperationType, Employee, AppUser, StockLog } from './types';
+import { Loader2, Database, AlertTriangle, Lock } from 'lucide-react';
+
+const SUPER_ADMIN_EMAIL = 'jhobo@grnesl.com';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [isApproved, setIsApproved] = useState(false);
 
   // Data State
   const [currentView, setCurrentView] = useState('dashboard');
@@ -30,6 +37,7 @@ const App: React.FC = () => {
   const [scrappedItems, setScrappedItems] = useState<ScrappedItem[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [stockLogs, setStockLogs] = useState<StockLog[]>([]);
   
   // Modals state
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -48,51 +56,91 @@ const App: React.FC = () => {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      if (!session) setIsLoading(false);
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      if (!session) setIsLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // Data Loading
+  // User Profile & Data Loading
   useEffect(() => {
-    if (session && isConfigured) {
-      loadData();
-    } else {
-      setIsLoading(false);
-    }
+    const checkUserAndLoad = async () => {
+      if (session && isConfigured) {
+        setIsLoading(true);
+        const email = session.user.email;
+        
+        try {
+          // 1. Check Super Admin hardcode
+          if (email === SUPER_ADMIN_EMAIL) {
+            setIsApproved(true);
+            setCurrentUser({ id: session.user.id, email, role: 'super_admin', is_approved: true });
+            await loadData();
+          } else {
+            // 2. Check App Users table
+            let appUser = await fetchAppUser(email);
+            
+            if (!appUser) {
+              // Create pending user if not exists
+              appUser = {
+                id: session.user.id,
+                email,
+                role: 'user',
+                is_approved: false
+              };
+              await createAppUser(appUser);
+            }
+
+            setCurrentUser(appUser);
+            if (appUser.is_approved) {
+              setIsApproved(true);
+              await loadData();
+            } else {
+              setIsApproved(false);
+            }
+          }
+        } catch (error) {
+          console.error("Auth flow error", error);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    checkUserAndLoad();
   }, [session]);
 
   const loadData = async () => {
-    setIsLoading(true);
     try {
-      const [prod, assign, scrap, emp, cats] = await Promise.all([
+      const [prod, assign, scrap, emp, cats, logs] = await Promise.all([
         fetchProducts(),
         fetchAssignments(),
         fetchScrappedItems(),
         fetchEmployees(),
-        fetchCategories()
+        fetchCategories(),
+        fetchStockLogs()
       ]);
       setProducts(prod);
       setAssignments(assign);
       setScrappedItems(scrap);
       setEmployees(emp);
       setCategories(cats);
+      setStockLogs(logs);
     } catch (error) {
       console.error("Failed to load data", error);
-      alert("Error loading data from server.");
-    } finally {
-      setIsLoading(false);
+      // Don't alert blocking error, might just be empty tables
     }
   };
 
   const handleSaveProduct = async (product: Product) => {
     try {
+      const isNew = !products.find(p => p.id === product.id);
       // Optimistic update
       let updatedProducts;
       if (editingProduct) {
@@ -102,8 +150,24 @@ const App: React.FC = () => {
       }
       setProducts(updatedProducts);
       
-      // DB Update
       await upsertProduct(product);
+      
+      // Log creation
+      if (isNew) {
+        const log: StockLog = {
+          id: crypto.randomUUID(),
+          action: 'CREATE',
+          productName: product.name,
+          quantity: product.quantity,
+          performedBy: session.user.email,
+          date: new Date().toISOString()
+        };
+        await addStockLogApi(log);
+        setStockLogs([log, ...stockLogs]);
+      } else {
+         // Optionally log updates, but might be too noisy. We focus on Inbound/Stock ops.
+      }
+
       // Reload to ensure sync
       const refreshed = await fetchProducts();
       setProducts(refreshed);
@@ -128,6 +192,7 @@ const App: React.FC = () => {
 
   const handleStockOperation = async (data: any) => {
     const { productId, quantity, type, employeeId, employeeName, reason, productName, productNameZh } = data;
+    const userEmail = session.user.email;
     
     try {
       // 1. Update Product Stock
@@ -152,7 +217,8 @@ const App: React.FC = () => {
           employeeName,
           quantity,
           assignedDate: new Date().toISOString(),
-          status: 'Active'
+          status: 'Active',
+          performedBy: userEmail
         };
         setAssignments([...assignments, newAssignment]);
         await addAssignmentApi(newAssignment);
@@ -164,10 +230,23 @@ const App: React.FC = () => {
           productNameZh: productNameZh || '',
           quantity,
           reason,
-          scrappedDate: new Date().toISOString()
+          scrappedDate: new Date().toISOString(),
+          performedBy: userEmail
         };
         setScrappedItems([newScrap, ...scrappedItems]);
         await addScrappedItemApi(newScrap);
+      } else if (type === 'INBOUND') {
+         // Log Inbound
+         const log: StockLog = {
+             id: crypto.randomUUID(),
+             action: 'INBOUND',
+             productName: product.name,
+             quantity: quantity,
+             performedBy: userEmail,
+             date: new Date().toISOString()
+         };
+         setStockLogs([log, ...stockLogs]);
+         await addStockLogApi(log);
       }
     } catch (error) {
       console.error(error);
@@ -255,6 +334,8 @@ const App: React.FC = () => {
         return <Employees employees={employees} assignments={assignments} onAddEmployee={handleAddEmployee} />;
       case 'scrapped':
         return <Scrapped scrappedItems={scrappedItems} />;
+      case 'logs':
+        return <Logs logs={stockLogs} />;
       case 'settings':
         return (
           <Settings 
@@ -266,6 +347,7 @@ const App: React.FC = () => {
             onAddCategory={handleAddCategory} 
             onDeleteCategory={handleDeleteCategory} 
             onImportData={handleImportData}
+            currentUser={currentUser}
           />
         );
       default:
@@ -306,10 +388,6 @@ const App: React.FC = () => {
               </div>
             </div>
           </div>
-          
-          <div className="text-xs text-slate-400">
-             Please add these keys to your environment configuration to proceed.
-          </div>
         </div>
       </div>
     );
@@ -330,7 +408,30 @@ const App: React.FC = () => {
     );
   }
 
-  // 4. Main App State
+  // 4. Not Approved State
+  if (!isApproved) {
+     return (
+        <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
+            <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-fade-in text-center p-10">
+                <div className="w-20 h-20 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <Lock size={40} />
+                </div>
+                <h1 className="text-2xl font-bold text-slate-900 mb-2">Account Pending Approval</h1>
+                <p className="text-slate-500 mb-6">
+                    Your account ({session.user.email}) has been created but requires approval from an administrator.
+                </p>
+                <div className="bg-slate-50 p-4 rounded-lg text-sm text-slate-600 mb-6">
+                    Please contact <strong>jhobo@grnesl.com</strong> to activate your access.
+                </div>
+                <button onClick={handleLogout} className="text-blue-600 hover:text-blue-800 font-medium text-sm">
+                    Sign Out and Check Later
+                </button>
+            </div>
+        </div>
+     );
+  }
+
+  // 5. Main App State
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900">
       <Sidebar currentView={currentView} onViewChange={setCurrentView} />
@@ -343,6 +444,7 @@ const App: React.FC = () => {
               <h2 className="text-2xl font-bold text-slate-800 capitalize">
                 {currentView === 'scrapped' ? 'Scrap Log' : 
                  currentView === 'employees' ? 'Staff Management' :
+                 currentView === 'logs' ? 'Operation History' :
                  currentView === 'settings' ? 'System Settings' : currentView}
               </h2>
               <p className="text-slate-500">
@@ -350,7 +452,8 @@ const App: React.FC = () => {
                 {currentView === 'inventory' && 'Manage your stock catalogue'}
                 {currentView === 'employees' && 'Manage staff and track asset assignments'}
                 {currentView === 'scrapped' && 'View history of damaged or lost items'}
-                {currentView === 'settings' && 'Configure system preferences and AI Advisor'}
+                {currentView === 'logs' && 'View inbound history and system logs'}
+                {currentView === 'settings' && 'Configure system preferences and users'}
               </p>
             </div>
             

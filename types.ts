@@ -1,3 +1,4 @@
+
 export interface Product {
   id: string;
   name: string; // English Name
@@ -53,6 +54,7 @@ export interface Assignment {
   quantity: number;
   assignedDate: string;
   status: 'Active' | 'Returned';
+  performedBy: string; // Email of the admin who assigned it
 }
 
 export interface ScrappedItem {
@@ -63,6 +65,25 @@ export interface ScrappedItem {
   quantity: number;
   reason: string;
   scrappedDate: string;
+  performedBy: string; // Email of the admin who scrapped it
+}
+
+export interface StockLog {
+  id: string;
+  action: 'INBOUND' | 'UPDATE' | 'CREATE';
+  productName: string;
+  quantity: number; // Positive for inbound
+  performedBy: string;
+  date: string;
+  details?: string;
+}
+
+export interface AppUser {
+  id: string;
+  email: string;
+  is_approved: boolean;
+  role: 'admin' | 'super_admin' | 'user';
+  created_at?: string;
 }
 
 export type OperationType = 'INBOUND' | 'ASSIGN' | 'SCRAP';

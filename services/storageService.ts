@@ -1,5 +1,6 @@
+
 import { supabase } from './supabaseClient';
-import { Product, Assignment, ScrappedItem, Employee } from '../types';
+import { Product, Assignment, ScrappedItem, Employee, AppUser, StockLog } from '../types';
 
 // Products
 export const fetchProducts = async (): Promise<Product[]> => {
@@ -68,5 +69,45 @@ export const addCategoryApi = async (name: string): Promise<void> => {
 
 export const deleteCategoryApi = async (name: string): Promise<void> => {
   const { error } = await supabase.from('categories').delete().eq('name', name);
+  if (error) throw error;
+};
+
+// --- NEW: Stock Logs (Inbound/History) ---
+export const fetchStockLogs = async (): Promise<StockLog[]> => {
+  const { data, error } = await supabase.from('stock_logs').select('*').order('date', { ascending: false }).limit(100);
+  if (error) {
+    // Fail silently if table doesn't exist yet, return empty
+    console.warn("Stock logs fetch error (table might be missing):", error);
+    return [];
+  }
+  return data || [];
+};
+
+export const addStockLogApi = async (log: StockLog): Promise<void> => {
+  // We use simple fire-and-forget logic or catch error to not block main flow if table missing
+  const { error } = await supabase.from('stock_logs').insert(log);
+  if (error) console.error("Failed to add stock log:", error);
+};
+
+// --- NEW: User Management ---
+export const fetchAppUser = async (email: string): Promise<AppUser | null> => {
+  const { data, error } = await supabase.from('app_users').select('*').eq('email', email).single();
+  if (error) return null;
+  return data;
+};
+
+export const createAppUser = async (user: AppUser): Promise<void> => {
+  const { error } = await supabase.from('app_users').insert(user);
+  if (error) throw error;
+};
+
+export const fetchAllUsers = async (): Promise<AppUser[]> => {
+  const { data, error } = await supabase.from('app_users').select('*').order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const updateUserStatus = async (email: string, isApproved: boolean): Promise<void> => {
+  const { error } = await supabase.from('app_users').update({ is_approved: isApproved }).eq('email', email);
   if (error) throw error;
 };

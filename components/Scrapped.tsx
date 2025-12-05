@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { ScrappedItem } from '../types';
 import { Trash2, Calendar, AlertCircle } from 'lucide-react';
@@ -25,7 +26,8 @@ const Scrapped: React.FC<ScrappedProps> = ({ scrappedItems }) => {
                 <th className="px-6 py-4">Product</th>
                 <th className="px-6 py-4">Quantity</th>
                 <th className="px-6 py-4">Reason</th>
-                <th className="px-6 py-4">Date Scrapped</th>
+                <th className="px-6 py-4">Scrapped By</th>
+                <th className="px-6 py-4">Date</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -44,6 +46,9 @@ const Scrapped: React.FC<ScrappedProps> = ({ scrappedItems }) => {
                         {item.reason}
                       </div>
                     </td>
+                    <td className="px-6 py-4 text-sm text-slate-600">
+                      {item.performedBy || 'System'}
+                    </td>
                     <td className="px-6 py-4 text-slate-500 text-sm">
                       <div className="flex items-center gap-2">
                         <Calendar size={14} />
@@ -54,7 +59,7 @@ const Scrapped: React.FC<ScrappedProps> = ({ scrappedItems }) => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
                     <Trash2 size={48} className="mx-auto mb-3 text-slate-200" />
                     <p>No scrapped items recorded.</p>
                   </td>
