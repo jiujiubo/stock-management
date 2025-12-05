@@ -19,10 +19,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
 
   return (
     <div className="w-64 bg-slate-900 text-white h-screen flex flex-col fixed left-0 top-0 shadow-xl z-20">
-      <div className="p-6 flex items-center space-x-3 border-b border-slate-700">
-        <div className="w-12 h-12 flex items-center justify-center shrink-0">
-           <img src="/logo.png" alt="GR Logo" className="w-full h-full object-contain" />
-        </div>
+      <div className="p-6 border-b border-slate-700">
         <div>
             <h1 className="text-lg font-bold tracking-wide leading-none">Great River</h1>
             <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider">Stock Management</p>
