@@ -70,9 +70,9 @@ export interface ScrappedItem {
 
 export interface StockLog {
   id: string;
-  action: 'INBOUND' | 'UPDATE' | 'CREATE';
+  action: 'INBOUND' | 'UPDATE' | 'CREATE' | 'ASSIGN' | 'RETURN' | 'SCRAP';
   productName: string;
-  quantity: number; // Positive for inbound
+  quantity: number; // Positive for inbound/return, negative logic handled in display usually
   performedBy: string;
   date: string;
   details?: string;

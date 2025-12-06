@@ -111,6 +111,15 @@ export const addAssignmentApi = async (assignment: Assignment): Promise<void> =>
   if (error) throw error;
 };
 
+export const returnAssignmentApi = async (assignmentId: string): Promise<void> => {
+  const { error } = await supabase
+    .from('assignments')
+    .update({ status: 'Returned' })
+    .eq('id', assignmentId);
+  
+  if (error) throw error;
+};
+
 // Scrapped Items
 export const fetchScrappedItems = async (): Promise<ScrappedItem[]> => {
   const { data, error } = await supabase.from('scrapped_items').select('*');

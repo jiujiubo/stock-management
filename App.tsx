@@ -5,14 +5,14 @@ import Dashboard from './components/Dashboard';
 import Inventory from './components/Inventory';
 import ProductModal from './components/ProductModal';
 import StockOperationModal from './components/StockOperationModal';
-import Scrapped from './components/Scrapped';
+// import Scrapped from './components/Scrapped'; // Merged into Logs
 import Employees from './components/Employees';
 import Settings from './components/Settings';
 import Login from './components/Login';
-import Logs from './components/Logs'; // New Component
+import Logs from './components/Logs'; 
 import { 
   fetchProducts, upsertProduct, deleteProductApi,
-  fetchAssignments, addAssignmentApi,
+  fetchAssignments, addAssignmentApi, returnAssignmentApi,
   fetchScrappedItems, addScrappedItemApi,
   fetchEmployees, addEmployeeApi,
   fetchCategories, addCategoryApi, deleteCategoryApi,
@@ -80,8 +80,6 @@ const App: React.FC = () => {
         try {
           // 1. Check Super Admin hardcode
           if (email === SUPER_ADMIN_EMAIL) {
-            // Ensure Super Admin exists in DB (so they appear in User Management lists)
-            // Wrap in try/catch so we don't block login if tables are missing
             try {
                 const existingAdmin = await fetchAppUser(email);
                 if (!existingAdmin) {
@@ -104,7 +102,6 @@ const App: React.FC = () => {
             let appUser = await fetchAppUser(email);
             
             if (!appUser) {
-              // Create pending user if not exists
               appUser = {
                 id: session.user.id,
                 email,
@@ -156,7 +153,7 @@ const App: React.FC = () => {
       setEmployees(emp);
       setCategories(cats);
       setStockLogs(logs);
-      setSchemaError(null); // Clear error on success
+      setSchemaError(null); 
     } catch (error: any) {
       console.error("Failed to load data", error);
       handleError(error);
@@ -166,7 +163,6 @@ const App: React.FC = () => {
   const handleSaveProduct = async (product: Product) => {
     try {
       const isNew = !products.find(p => p.id === product.id);
-      // Optimistic update
       let updatedProducts;
       if (editingProduct) {
         updatedProducts = products.map(p => p.id === product.id ? product : p);
@@ -178,7 +174,6 @@ const App: React.FC = () => {
       await upsertProduct(product);
       setSchemaError(null);
       
-      // Log creation
       if (isNew) {
         const log: StockLog = {
           id: crypto.randomUUID(),
@@ -192,14 +187,13 @@ const App: React.FC = () => {
         setStockLogs([log, ...stockLogs]);
       }
 
-      // Reload to ensure sync
       const refreshed = await fetchProducts();
       setProducts(refreshed);
     } catch (error: any) {
       console.error(error);
       handleError(error);
       alert(`Failed to save product: ${error.message}`);
-      loadData(); // Revert on error
+      loadData(); 
     }
   };
 
@@ -225,14 +219,14 @@ const App: React.FC = () => {
       const product = products.find(p => p.id === productId);
       if (!product) return;
 
+      // Inbound adds stock, Assign/Scrap reduces stock
       const newQuantity = type === 'INBOUND' ? product.quantity + quantity : Math.max(0, product.quantity - quantity);
       const updatedProduct = { ...product, quantity: newQuantity, lastUpdated: new Date().toISOString() };
       
-      // Optimistic Update
       setProducts(products.map(p => p.id === productId ? updatedProduct : p));
       await upsertProduct(updatedProduct);
 
-      // 2. Create Transaction Record
+      // 2. Perform Specific Action & LOG IT
       if (type === 'ASSIGN') {
         const newAssignment: Assignment = {
           id: crypto.randomUUID(),
@@ -248,6 +242,20 @@ const App: React.FC = () => {
         };
         setAssignments([...assignments, newAssignment]);
         await addAssignmentApi(newAssignment);
+        
+        // Log Assignment
+        const log: StockLog = {
+            id: crypto.randomUUID(),
+            action: 'ASSIGN',
+            productName: productName,
+            quantity: quantity,
+            performedBy: userEmail,
+            date: new Date().toISOString(),
+            details: `Assigned to ${employeeName}`
+        };
+        setStockLogs([log, ...stockLogs]);
+        await addStockLogApi(log);
+
       } else if (type === 'SCRAP') {
         const newScrap: ScrappedItem = {
           id: crypto.randomUUID(),
@@ -261,8 +269,21 @@ const App: React.FC = () => {
         };
         setScrappedItems([newScrap, ...scrappedItems]);
         await addScrappedItemApi(newScrap);
+
+        // Log Scrap
+        const log: StockLog = {
+            id: crypto.randomUUID(),
+            action: 'SCRAP',
+            productName: productName,
+            quantity: quantity,
+            performedBy: userEmail,
+            date: new Date().toISOString(),
+            details: `Reason: ${reason}`
+        };
+        setStockLogs([log, ...stockLogs]);
+        await addStockLogApi(log);
+
       } else if (type === 'INBOUND') {
-         // Log Inbound
          const log: StockLog = {
              id: crypto.randomUUID(),
              action: 'INBOUND',
@@ -281,6 +302,41 @@ const App: React.FC = () => {
       alert(`Operation failed: ${error.message}`);
       loadData();
     }
+  };
+
+  const handleReturnAsset = async (assignment: Assignment) => {
+      try {
+        // 1. Update Product Stock (Increase)
+        const product = products.find(p => p.id === assignment.productId);
+        if (product) {
+            const updatedProduct = { ...product, quantity: product.quantity + assignment.quantity, lastUpdated: new Date().toISOString() };
+            setProducts(products.map(p => p.id === product.id ? updatedProduct : p));
+            await upsertProduct(updatedProduct);
+        }
+
+        // 2. Update Assignment Status
+        const updatedAssignments = assignments.map(a => a.id === assignment.id ? { ...a, status: 'Returned' as const } : a);
+        setAssignments(updatedAssignments);
+        await returnAssignmentApi(assignment.id);
+
+        // 3. Log Return
+        const log: StockLog = {
+            id: crypto.randomUUID(),
+            action: 'RETURN',
+            productName: assignment.productName,
+            quantity: assignment.quantity,
+            performedBy: session.user.email,
+            date: new Date().toISOString(),
+            details: `Returned from ${assignment.employeeName}`
+        };
+        setStockLogs([log, ...stockLogs]);
+        await addStockLogApi(log);
+
+      } catch (error: any) {
+          handleError(error);
+          alert("Failed to return asset");
+          loadData();
+      }
   };
 
   const handleAddEmployee = async (newEmployee: Employee) => {
@@ -353,6 +409,9 @@ const App: React.FC = () => {
           <Inventory 
             products={products} 
             categories={categories}
+            assignments={assignments}
+            scrappedItems={scrappedItems}
+            logs={stockLogs}
             onAddProduct={openAddModal}
             onEditProduct={openEditModal}
             onDeleteProduct={handleDeleteProduct}
@@ -362,9 +421,9 @@ const App: React.FC = () => {
           />
         );
       case 'employees':
-        return <Employees employees={employees} assignments={assignments} onAddEmployee={handleAddEmployee} />;
-      case 'scrapped':
-        return <Scrapped scrappedItems={scrappedItems} />;
+        return <Employees employees={employees} assignments={assignments} onAddEmployee={handleAddEmployee} onReturnAsset={handleReturnAsset} />;
+      case 'scrapped': // Redirect to Logs in UI or keep as alias if needed, but removing separate view in logic
+        return <Logs logs={stockLogs} />;
       case 'logs':
         return <Logs logs={stockLogs} />;
       case 'settings':
@@ -386,7 +445,6 @@ const App: React.FC = () => {
     }
   };
 
-  // 1. Missing Configuration State
   if (!isConfigured) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -424,12 +482,10 @@ const App: React.FC = () => {
     );
   }
 
-  // 2. Auth State
   if (!session) {
     return <Login />;
   }
 
-  // 3. Loading State
   if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-500 gap-4">
@@ -439,7 +495,6 @@ const App: React.FC = () => {
     );
   }
 
-  // 4. Not Approved State
   if (!isApproved) {
      return (
         <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
@@ -462,7 +517,6 @@ const App: React.FC = () => {
      );
   }
 
-  // 5. Main App State
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900 relative flex-col">
       {/* Schema Error Banner */}
@@ -495,17 +549,16 @@ const App: React.FC = () => {
             <header className="mb-8 flex justify-between items-center">
                 <div>
                 <h2 className="text-2xl font-bold text-slate-800 capitalize">
-                    {currentView === 'scrapped' ? 'Scrap Log' : 
+                    {currentView === 'scrapped' ? 'System Logs' : 
                     currentView === 'employees' ? 'Staff Management' :
-                    currentView === 'logs' ? 'Operation History' :
+                    currentView === 'logs' ? 'History & Logs' :
                     currentView === 'settings' ? 'System Settings' : currentView}
                 </h2>
                 <p className="text-slate-500">
                     {currentView === 'dashboard' && `Overview of ${products.length} products`}
-                    {currentView === 'inventory' && 'Manage your stock catalogue'}
+                    {currentView === 'inventory' && 'Manage your stock catalogue and view history'}
                     {currentView === 'employees' && 'Manage staff and track asset assignments'}
-                    {currentView === 'scrapped' && 'View history of damaged or lost items'}
-                    {currentView === 'logs' && 'View inbound history and system logs'}
+                    {currentView === 'logs' && 'View all system transactions and history'}
                     {currentView === 'settings' && 'Configure system preferences and users'}
                 </p>
                 </div>

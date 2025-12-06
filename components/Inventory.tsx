@@ -1,10 +1,14 @@
+
 import React, { useState } from 'react';
-import { Product } from '../types';
-import { Edit, Trash2, Search, Filter, Plus, AlertCircle, ArrowDownCircle, UserPlus } from 'lucide-react';
+import { Product, Assignment, ScrappedItem, StockLog } from '../types';
+import { Edit, Trash2, Search, Filter, Plus, AlertCircle, ArrowDownCircle, UserPlus, Database } from 'lucide-react';
 
 interface InventoryProps {
   products: Product[];
   categories: string[];
+  assignments: Assignment[];
+  scrappedItems: ScrappedItem[];
+  logs: StockLog[];
   onAddProduct: () => void;
   onEditProduct: (product: Product) => void;
   onDeleteProduct: (id: string) => void;
@@ -14,7 +18,8 @@ interface InventoryProps {
 }
 
 const Inventory: React.FC<InventoryProps> = ({ 
-  products, categories, onAddProduct, onEditProduct, onDeleteProduct,
+  products, categories, assignments, scrappedItems, logs,
+  onAddProduct, onEditProduct, onDeleteProduct,
   onInbound, onAssign, onScrap
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -84,13 +89,12 @@ const Inventory: React.FC<InventoryProps> = ({
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-sm font-semibold uppercase tracking-wider">
-                <th className="px-6 py-4">Product</th>
-                <th className="px-6 py-4">Category</th>
-                <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4 text-right">Stock</th>
-                <th className="px-6 py-4 text-right">Unit Price</th>
-                <th className="px-6 py-4 text-right">Total Value</th>
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                <th className="px-6 py-4">Product Info</th>
+                <th className="px-6 py-4 text-center">Inbound (Total)</th>
+                <th className="px-6 py-4 text-center">Assigned (Active)</th>
+                <th className="px-6 py-4 text-center">Scrapped (Total)</th>
+                <th className="px-6 py-4 text-center">Stock</th>
                 <th className="px-6 py-4 text-center">Actions</th>
               </tr>
             </thead>
@@ -98,40 +102,57 @@ const Inventory: React.FC<InventoryProps> = ({
               {filteredProducts.length > 0 ? (
                 filteredProducts.map((product) => {
                   const isLowStock = product.quantity <= product.minStock;
-                  const totalValue = product.quantity * product.price;
+                  
+                  // Calculations
+                  const totalInbound = logs
+                      .filter(l => (l.productName === product.name) && (l.action === 'INBOUND' || l.action === 'CREATE'))
+                      .reduce((acc, l) => acc + l.quantity, 0);
+                  
+                  const activeAssigned = assignments
+                      .filter(a => a.productId === product.id && a.status === 'Active')
+                      .reduce((acc, a) => acc + a.quantity, 0);
+
+                  const totalScrapped = scrappedItems
+                      .filter(s => s.productId === product.id)
+                      .reduce((acc, s) => acc + s.quantity, 0);
+
                   return (
                     <tr key={product.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="font-medium text-slate-900">{product.name}</div>
                         <div className="text-sm text-slate-500">{product.nameZh}</div>
-                        <div className="text-xs text-slate-400 mt-0.5">SKU: {product.sku}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                             <span className="text-xs text-slate-400">SKU: {product.sku}</span>
+                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
+                                {product.category}
+                             </span>
+                        </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">
-                          {product.category}
-                        </span>
+                      
+                      {/* Stats Columns */}
+                      <td className="px-6 py-4 text-center text-sm font-medium text-green-600">
+                        {totalInbound > 0 ? totalInbound : '-'}
                       </td>
-                      <td className="px-6 py-4">
-                        {isLowStock ? (
-                          <span className="inline-flex items-center gap-1 text-red-600 bg-red-50 px-2 py-1 rounded-md text-xs font-medium border border-red-100">
-                            <AlertCircle size={12} /> Low Stock
-                          </span>
-                        ) : (
-                          <span className="text-green-600 bg-green-50 px-2 py-1 rounded-md text-xs font-medium border border-green-100">
-                            In Stock
-                          </span>
-                        )}
+                      <td className="px-6 py-4 text-center text-sm font-medium text-blue-600">
+                        {activeAssigned > 0 ? activeAssigned : '-'}
                       </td>
-                      <td className="px-6 py-4 text-right font-mono text-slate-700">
-                        {product.quantity}
-                        <span className="text-slate-400 text-xs ml-1">/ {product.minStock}</span>
+                      <td className="px-6 py-4 text-center text-sm font-medium text-red-500">
+                        {totalScrapped > 0 ? totalScrapped : '-'}
                       </td>
-                      <td className="px-6 py-4 text-right font-medium text-slate-600">
-                        ${product.price.toFixed(2)}
+
+                      <td className="px-6 py-4 text-center">
+                         <div className="flex flex-col items-center">
+                            <span className="font-mono font-bold text-slate-800 text-lg">{product.quantity}</span>
+                            {isLowStock ? (
+                                <span className="inline-flex items-center gap-1 text-red-600 text-[10px] font-bold">
+                                    <AlertCircle size={10} /> Low Stock
+                                </span>
+                            ) : (
+                                <span className="text-xs text-slate-400">Available</span>
+                            )}
+                         </div>
                       </td>
-                      <td className="px-6 py-4 text-right font-bold text-slate-900">
-                        ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </td>
+
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-center gap-1">
                           <button 
@@ -162,7 +183,7 @@ const Inventory: React.FC<InventoryProps> = ({
                 })
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
                     <div className="flex flex-col items-center gap-3">
                       <Search size={48} className="text-slate-200" />
                       <p>No products found matching your criteria.</p>

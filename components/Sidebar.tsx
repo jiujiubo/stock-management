@@ -13,7 +13,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
     { id: 'inventory', label: 'Inventory', icon: Package },
     { id: 'employees', label: 'Staff Management', icon: Users },
     { id: 'logs', label: 'History & Logs', icon: ClipboardList },
-    { id: 'scrapped', label: 'Scrap Log', icon: Trash2 },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ];
 
@@ -37,7 +36,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
                 isActive 
                   ? 'bg-lime-600 text-white shadow-lg shadow-lime-900/50' 
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
               }`}
             >
               <Icon size={20} />
@@ -50,7 +49,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
       <div className="p-4 border-t border-slate-800">
         <div className="bg-slate-800 rounded-lg p-3 text-xs text-slate-400">
           <p className="font-semibold text-slate-300 mb-1">Great River System</p>
-          <p>v1.5.0 • Powered by Gemini</p>
+          <p>v1.6.0 • Powered by Gemini</p>
         </div>
       </div>
     </div>
