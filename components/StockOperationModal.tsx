@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Product, OperationType, Employee } from '../types';
 import { X, ArrowDownCircle, UserPlus, Trash2, Search } from 'lucide-react';
@@ -46,7 +47,10 @@ const StockOperationModal: React.FC<StockOperationModalProps> = ({
     let employeeName = '';
     if (type === 'ASSIGN') {
         const emp = employees.find(e => e.id === employeeId);
-        if (!emp) return;
+        if (!emp) {
+            alert("Please select a valid employee.");
+            return;
+        }
         employeeName = emp.name;
     }
 

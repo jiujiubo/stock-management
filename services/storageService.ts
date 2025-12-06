@@ -35,23 +35,76 @@ export const addEmployeeApi = async (employee: Employee): Promise<void> => {
 export const fetchAssignments = async (): Promise<Assignment[]> => {
   const { data, error } = await supabase.from('assignments').select('*');
   if (error) throw error;
-  return data || [];
+  
+  // Map DB (potential snake_case) to App (camelCase)
+  return (data || []).map((item: any) => ({
+    id: item.id,
+    productId: item.product_id || item.productId,
+    productName: item.product_name || item.productName,
+    productNameZh: item.product_name_zh || item.productNameZh,
+    employeeId: item.employee_id || item.employeeId,
+    employeeName: item.employee_name || item.employeeName,
+    quantity: item.quantity,
+    assignedDate: item.assigned_date || item.assignedDate || item.created_at,
+    status: item.status,
+    performedBy: item.performed_by || item.performedBy
+  }));
 };
 
 export const addAssignmentApi = async (assignment: Assignment): Promise<void> => {
-  const { error } = await supabase.from('assignments').insert(assignment);
+  // Map App (camelCase) to DB (snake_case)
+  const dbRecord = {
+    id: assignment.id,
+    product_id: assignment.productId,
+    product_name: assignment.productName,
+    product_name_zh: assignment.productNameZh,
+    employee_id: assignment.employeeId,
+    employee_name: assignment.employeeName,
+    quantity: assignment.quantity,
+    assigned_date: assignment.assignedDate,
+    status: assignment.status,
+    performed_by: assignment.performedBy
+  };
+  
+  const { error } = await supabase.from('assignments').insert(dbRecord);
   if (error) throw error;
 };
 
 // Scrapped Items
 export const fetchScrappedItems = async (): Promise<ScrappedItem[]> => {
-  const { data, error } = await supabase.from('scrapped_items').select('*').order('scrappedDate', { ascending: false });
+  // Order might fail if column doesn't exist, so we sort in JS
+  const { data, error } = await supabase.from('scrapped_items').select('*');
   if (error) throw error;
-  return data || [];
+  
+  const items = (data || []).map((item: any) => ({
+    id: item.id,
+    productId: item.product_id || item.productId,
+    productName: item.product_name || item.productName,
+    productNameZh: item.product_name_zh || item.productNameZh,
+    quantity: item.quantity,
+    reason: item.reason,
+    scrappedDate: item.scrapped_date || item.scrappedDate || item.created_at,
+    performedBy: item.performed_by || item.performedBy
+  }));
+
+  // Sort by date desc
+  return items.sort((a, b) => new Date(b.scrappedDate).getTime() - new Date(a.scrappedDate).getTime());
 };
 
 export const addScrappedItemApi = async (item: ScrappedItem): Promise<void> => {
-  const { error } = await supabase.from('scrapped_items').insert(item);
+  // Map App (camelCase) to DB (snake_case)
+  const dbRecord = {
+    id: item.id,
+    product_id: item.productId,
+    product_name: item.productName,
+    product_name_zh: item.productNameZh,
+    quantity: item.quantity,
+    reason: item.reason,
+    scrapped_date: item.scrappedDate,
+    performed_by: item.performedBy
+  };
+
+  const { error } = await supabase.from('scrapped_items').insert(dbRecord);
   if (error) throw error;
 };
 
@@ -74,18 +127,37 @@ export const deleteCategoryApi = async (name: string): Promise<void> => {
 
 // --- NEW: Stock Logs (Inbound/History) ---
 export const fetchStockLogs = async (): Promise<StockLog[]> => {
-  const { data, error } = await supabase.from('stock_logs').select('*').order('date', { ascending: false }).limit(100);
+  const { data, error } = await supabase.from('stock_logs').select('*');
+  
   if (error) {
-    // Fail silently if table doesn't exist yet, return empty
-    console.warn("Stock logs fetch error (table might be missing):", error);
+    console.warn("Stock logs fetch error:", error);
     return [];
   }
-  return data || [];
+
+  const logs = (data || []).map((item: any) => ({
+    id: item.id,
+    action: item.action,
+    productName: item.product_name || item.productName,
+    quantity: item.quantity,
+    performedBy: item.performed_by || item.performedBy,
+    date: item.date || item.created_at,
+    details: item.details
+  }));
+
+  return logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 };
 
 export const addStockLogApi = async (log: StockLog): Promise<void> => {
-  // We use simple fire-and-forget logic or catch error to not block main flow if table missing
-  const { error } = await supabase.from('stock_logs').insert(log);
+  const dbRecord = {
+    id: log.id,
+    action: log.action,
+    product_name: log.productName,
+    quantity: log.quantity,
+    performed_by: log.performedBy,
+    date: log.date,
+    details: log.details
+  };
+  const { error } = await supabase.from('stock_logs').insert(dbRecord);
   if (error) console.error("Failed to add stock log:", error);
 };
 
