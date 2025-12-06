@@ -20,7 +20,7 @@ import {
 } from './services/storageService';
 import { supabase, isConfigured } from './services/supabaseClient';
 import { Product, Assignment, ScrappedItem, OperationType, Employee, AppUser, StockLog } from './types';
-import { Loader2, Database, AlertTriangle, Lock } from 'lucide-react';
+import { Loader2, Database, AlertTriangle, Lock, XCircle } from 'lucide-react';
 
 const SUPER_ADMIN_EMAIL = 'jhobo@grnesl.com';
 
@@ -29,6 +29,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [isApproved, setIsApproved] = useState(false);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
 
   // Data State
   const [currentView, setCurrentView] = useState('dashboard');
@@ -132,6 +133,13 @@ const App: React.FC = () => {
     checkUserAndLoad();
   }, [session]);
 
+  const handleError = (error: any) => {
+    const msg = error.message || "Unknown error";
+    if (msg.includes('column') || msg.includes('relation') || msg.includes('does not exist')) {
+        setSchemaError("Database Schema Mismatch: Tables or columns are missing. Please go to Settings > View Database Schema and run the repair script.");
+    }
+  };
+
   const loadData = async () => {
     try {
       const [prod, assign, scrap, emp, cats, logs] = await Promise.all([
@@ -148,9 +156,10 @@ const App: React.FC = () => {
       setEmployees(emp);
       setCategories(cats);
       setStockLogs(logs);
-    } catch (error) {
+      setSchemaError(null); // Clear error on success
+    } catch (error: any) {
       console.error("Failed to load data", error);
-      // Don't alert blocking error, might just be empty tables
+      handleError(error);
     }
   };
 
@@ -167,6 +176,7 @@ const App: React.FC = () => {
       setProducts(updatedProducts);
       
       await upsertProduct(product);
+      setSchemaError(null);
       
       // Log creation
       if (isNew) {
@@ -180,8 +190,6 @@ const App: React.FC = () => {
         };
         await addStockLogApi(log);
         setStockLogs([log, ...stockLogs]);
-      } else {
-         // Optionally log updates, but might be too noisy. We focus on Inbound/Stock ops.
       }
 
       // Reload to ensure sync
@@ -189,12 +197,8 @@ const App: React.FC = () => {
       setProducts(refreshed);
     } catch (error: any) {
       console.error(error);
-      const msg = error.message || "Unknown error";
-      if (msg.includes('column') || msg.includes('relation')) {
-          alert("DATABASE SCHEMA ERROR: Missing columns. \n\nPlease go to Settings > View Database Schema, copy the SQL, and run it in Supabase SQL Editor to fix your tables.");
-      } else {
-          alert(`Failed to save product: ${msg}`);
-      }
+      handleError(error);
+      alert(`Failed to save product: ${error.message}`);
       loadData(); // Revert on error
     }
   };
@@ -270,14 +274,11 @@ const App: React.FC = () => {
          setStockLogs([log, ...stockLogs]);
          await addStockLogApi(log);
       }
+      setSchemaError(null);
     } catch (error: any) {
       console.error(error);
-      const msg = error.message || "Unknown error";
-      if (msg.includes('column') || msg.includes('relation')) {
-          alert("DATABASE SCHEMA ERROR: Missing columns. \n\nPlease go to Settings > View Database Schema, copy the SQL, and run it in Supabase SQL Editor to fix your tables.");
-      } else {
-          alert(`Operation failed: ${msg}`);
-      }
+      handleError(error);
+      alert(`Operation failed: ${error.message}`);
       loadData();
     }
   };
@@ -286,7 +287,9 @@ const App: React.FC = () => {
     try {
       setEmployees([...employees, newEmployee]);
       await addEmployeeApi(newEmployee);
-    } catch (error) {
+      setSchemaError(null);
+    } catch (error: any) {
+      handleError(error);
       alert("Failed to add employee");
       loadData();
     }
@@ -297,7 +300,8 @@ const App: React.FC = () => {
           try {
             setCategories([...categories, cat]);
             await addCategoryApi(cat);
-          } catch (e) {
+          } catch (e: any) {
+            handleError(e);
             alert("Failed to add category");
             loadData();
           }
@@ -460,44 +464,67 @@ const App: React.FC = () => {
 
   // 5. Main App State
   return (
-    <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900">
-      <Sidebar currentView={currentView} onViewChange={setCurrentView} />
-      
-      <main className="flex-1 ml-64 p-8 overflow-y-auto h-screen">
-        <div className="max-w-7xl mx-auto">
-          {/* Header */}
-          <header className="mb-8 flex justify-between items-center">
-            <div>
-              <h2 className="text-2xl font-bold text-slate-800 capitalize">
-                {currentView === 'scrapped' ? 'Scrap Log' : 
-                 currentView === 'employees' ? 'Staff Management' :
-                 currentView === 'logs' ? 'Operation History' :
-                 currentView === 'settings' ? 'System Settings' : currentView}
-              </h2>
-              <p className="text-slate-500">
-                {currentView === 'dashboard' && `Overview of ${products.length} products`}
-                {currentView === 'inventory' && 'Manage your stock catalogue'}
-                {currentView === 'employees' && 'Manage staff and track asset assignments'}
-                {currentView === 'scrapped' && 'View history of damaged or lost items'}
-                {currentView === 'logs' && 'View inbound history and system logs'}
-                {currentView === 'settings' && 'Configure system preferences and users'}
-              </p>
+    <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900 relative flex-col">
+      {/* Schema Error Banner */}
+      {schemaError && (
+        <div className="bg-red-600 text-white px-4 py-2 flex items-center justify-between shadow-md z-50">
+            <div className="flex items-center gap-2 text-sm font-medium">
+                <AlertTriangle size={18} />
+                {schemaError}
             </div>
-            
-            <div className="flex items-center gap-3">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-medium text-slate-900">{session.user.email}</p>
-                <button onClick={handleLogout} className="text-xs text-red-500 hover:text-red-700 font-medium">Sign Out</button>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold border-2 border-white shadow-sm">
-                {session.user.email?.substring(0,2).toUpperCase()}
-              </div>
+            <div className="flex gap-4">
+                <button 
+                  onClick={() => setCurrentView('settings')} 
+                  className="bg-white text-red-600 px-3 py-1 rounded text-xs font-bold hover:bg-red-50"
+                >
+                    Go to Settings
+                </button>
+                <button onClick={() => setSchemaError(null)} className="opacity-80 hover:opacity-100">
+                    <XCircle size={18} />
+                </button>
             </div>
-          </header>
-
-          {renderContent()}
         </div>
-      </main>
+      )}
+
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar currentView={currentView} onViewChange={setCurrentView} />
+        
+        <main className="flex-1 ml-64 p-8 overflow-y-auto h-screen">
+            <div className="max-w-7xl mx-auto">
+            {/* Header */}
+            <header className="mb-8 flex justify-between items-center">
+                <div>
+                <h2 className="text-2xl font-bold text-slate-800 capitalize">
+                    {currentView === 'scrapped' ? 'Scrap Log' : 
+                    currentView === 'employees' ? 'Staff Management' :
+                    currentView === 'logs' ? 'Operation History' :
+                    currentView === 'settings' ? 'System Settings' : currentView}
+                </h2>
+                <p className="text-slate-500">
+                    {currentView === 'dashboard' && `Overview of ${products.length} products`}
+                    {currentView === 'inventory' && 'Manage your stock catalogue'}
+                    {currentView === 'employees' && 'Manage staff and track asset assignments'}
+                    {currentView === 'scrapped' && 'View history of damaged or lost items'}
+                    {currentView === 'logs' && 'View inbound history and system logs'}
+                    {currentView === 'settings' && 'Configure system preferences and users'}
+                </p>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                <div className="text-right hidden sm:block">
+                    <p className="text-sm font-medium text-slate-900">{session.user.email}</p>
+                    <button onClick={handleLogout} className="text-xs text-red-500 hover:text-red-700 font-medium">Sign Out</button>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold border-2 border-white shadow-sm">
+                    {session.user.email?.substring(0,2).toUpperCase()}
+                </div>
+                </div>
+            </header>
+
+            {renderContent()}
+            </div>
+        </main>
+      </div>
 
       <ProductModal 
         isOpen={isProductModalOpen} 

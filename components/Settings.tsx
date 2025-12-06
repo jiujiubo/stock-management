@@ -184,99 +184,71 @@ const Settings: React.FC<SettingsProps> = ({
     }
   };
 
-  const sqlSchema = `-- Run this in Supabase SQL Editor to FIX and CREATE tables
+  const sqlSchema = `-- REPAIR SCRIPT: Run this in Supabase SQL Editor
+-- This script safely adds missing columns to existing tables.
 
--- 1. Products Table (Create if missing)
-create table if not exists products (
-  id text primary key,
-  name text not null,
-  name_zh text,
-  sku text,
-  category text,
-  quantity numeric default 0,
-  price numeric default 0,
-  min_stock numeric default 0,
-  description text,
-  last_updated timestamptz default now()
-);
+-- 1. Force Cache Reload (Clear stale config)
+NOTIFY pgrst, 'reload config';
 
--- 2. Repair Products Table (Add columns if missing)
-alter table products add column if not exists last_updated timestamptz default now();
-alter table products add column if not exists min_stock numeric default 0;
+-- 2. PRODUCTS: Add missing columns
+create table if not exists products (id text primary key, name text not null);
 alter table products add column if not exists name_zh text;
+alter table products add column if not exists sku text;
+alter table products add column if not exists category text;
+alter table products add column if not exists quantity numeric default 0;
+alter table products add column if not exists price numeric default 0;
+alter table products add column if not exists min_stock numeric default 0;
+alter table products add column if not exists description text;
+alter table products add column if not exists last_updated timestamptz default now();
 
--- 3. Employees Table
-create table if not exists employees (
-  id text primary key,
-  name text not null,
-  email text,
-  department text,
-  role text,
-  joined_date timestamptz default now()
-);
--- Repair Employees
+-- 3. EMPLOYEES: Add missing columns
+create table if not exists employees (id text primary key, name text not null);
+alter table employees add column if not exists email text;
+alter table employees add column if not exists department text;
+alter table employees add column if not exists role text;
 alter table employees add column if not exists joined_date timestamptz default now();
 
--- 4. Assignments Table
-create table if not exists assignments (
-  id uuid primary key default gen_random_uuid(),
-  product_id text references products(id),
-  product_name text,
-  product_name_zh text,
-  employee_id text references employees(id),
-  employee_name text,
-  quantity numeric not null,
-  assigned_date timestamptz default now(),
-  status text,
-  performed_by text
-);
--- Repair Assignments
+-- 4. ASSIGNMENTS: Add missing columns
+create table if not exists assignments (id uuid primary key default gen_random_uuid());
+alter table assignments add column if not exists product_id text;
+alter table assignments add column if not exists product_name text;
 alter table assignments add column if not exists product_name_zh text;
+alter table assignments add column if not exists employee_id text;
+alter table assignments add column if not exists employee_name text;
+alter table assignments add column if not exists quantity numeric;
+alter table assignments add column if not exists assigned_date timestamptz default now();
+alter table assignments add column if not exists status text;
 alter table assignments add column if not exists performed_by text;
 
--- 5. Scrapped Items Table
-create table if not exists scrapped_items (
-  id uuid primary key default gen_random_uuid(),
-  product_id text references products(id),
-  product_name text,
-  product_name_zh text,
-  quantity numeric not null,
-  reason text,
-  scrapped_date timestamptz default now(),
-  performed_by text
-);
--- Repair Scrapped Items
+-- 5. SCRAPPED ITEMS: Add missing columns
+create table if not exists scrapped_items (id uuid primary key default gen_random_uuid());
+alter table scrapped_items add column if not exists product_id text;
+alter table scrapped_items add column if not exists product_name text;
 alter table scrapped_items add column if not exists product_name_zh text;
+alter table scrapped_items add column if not exists quantity numeric;
+alter table scrapped_items add column if not exists reason text;
+alter table scrapped_items add column if not exists scrapped_date timestamptz default now();
 alter table scrapped_items add column if not exists performed_by text;
 
--- 6. Stock Logs Table
-create table if not exists stock_logs (
-  id uuid primary key default gen_random_uuid(),
-  action text,
-  product_name text,
-  quantity numeric,
-  performed_by text,
-  date timestamptz default now(),
-  details text
-);
+-- 6. STOCK LOGS
+create table if not exists stock_logs (id uuid primary key default gen_random_uuid());
+alter table stock_logs add column if not exists action text;
+alter table stock_logs add column if not exists product_name text;
+alter table stock_logs add column if not exists quantity numeric;
+alter table stock_logs add column if not exists performed_by text;
+alter table stock_logs add column if not exists date timestamptz default now();
+alter table stock_logs add column if not exists details text;
 
--- 7. Categories Table
-create table if not exists categories (
-  id bigint generated by default as identity primary key,
-  name text unique not null,
-  created_at timestamptz default now()
-);
+-- 7. CATEGORIES
+create table if not exists categories (id bigint generated by default as identity primary key, name text unique not null);
 
--- 8. App Users Table
-create table if not exists app_users (
-  id uuid primary key,
-  email text unique not null,
-  is_approved boolean default false,
-  role text default 'user',
-  created_at timestamptz default now()
-);
+-- 8. USERS
+create table if not exists app_users (id uuid primary key, email text unique not null);
+alter table app_users add column if not exists is_approved boolean default false;
+alter table app_users add column if not exists role text default 'user';
+alter table app_users add column if not exists created_at timestamptz default now();
 
--- IMPORTANT: Reload the schema cache to recognize new columns immediately
+-- 9. Final Cache Reload (Apply changes)
 NOTIFY pgrst, 'reload config';
 `;
 
